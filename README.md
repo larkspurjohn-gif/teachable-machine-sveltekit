@@ -1,42 +1,47 @@
-# sv
+# Teachable Machine + SvelteKit
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+SvelteKit app for running a Teachable Machine image model with webcam inference in the browser.
 
-## Creating a project
+## Stack
 
-If you're seeing this, you've probably already done this step. Congrats!
+- SvelteKit
+- `@tensorflow/tfjs`
+- `@teachablemachine/image`
+
+## Setup
+
+1. Install dependencies:
 
 ```sh
-# create a new project
-npx sv create my-app
+npm install
 ```
 
-To recreate this project with the same configuration:
+2. Export your model from Teachable Machine (Image Project).
 
-```sh
-# recreate this project
-npx sv create --template minimal --no-types --add tailwindcss="plugins:typography,forms" --install npm teachable-machine-svelte
+3. Copy exported files into:
+
+```text
+static/tm-my-image-model/
 ```
 
-## Developing
+At minimum this folder should include `model.json`, `metadata.json`, and the weight shard files.
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+## Run locally
 
 ```sh
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
 ```
 
-## Building
+Open the app, click **Start**, and allow camera access.
 
-To create a production version of your app:
+## Build
 
 ```sh
 npm run build
+npm run preview
 ```
 
-You can preview the production build with `npm run preview`.
+## Notes
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+- The app expects the model at `/tm-my-image-model/`.
+- Teachable Machine model artifacts can be large and are currently ignored by git.
