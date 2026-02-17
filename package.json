@@ -19,5 +19,9 @@
 		"svelte": "^5.49.2",
 		"tailwindcss": "^4.1.18",
 		"vite": "^7.3.1"
+	},
+	"dependencies": {
+		"@teachablemachine/image": "^0.8.5",
+		"@tensorflow/tfjs": "^4.22.0"
 	}
 }
