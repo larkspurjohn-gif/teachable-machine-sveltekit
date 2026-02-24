@@ -1,105 +1,141 @@
+<svelte:head>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@latest/dist/speech-commands.min.js"></script>
+</svelte:head>
+
 <script>
-	import { onDestroy } from 'svelte';
+    import { onDestroy, onMount } from 'svelte';
+    import { browser } from '$app/environment';
 
-	const MODEL_URL = '/tm-my-image-model/';
+    const MODEL_PATH = '/tm-my-audio-model/';
 
-	let model;
-	let webcam;
-	let tmImage;
-	let maxPredictions = 0;
-	let predictions = [];
-	let webcamContainer;
-	let isStarting = false;
-	let isRunning = false;
-	let animationFrameId;
+    let recognizer;
+    let predictions = [];
+    let isStarting = false;
+    let isRunning = false;
+    let libReady = false; // New state to track the library
+    let errorMessage = "";
+    
+    let animalMood = "😊"; 
+    let isScared = false;
 
-	async function ensureLibrariesLoaded() {
-		if (tmImage) return;
-		await import('@tensorflow/tfjs');
-		const tmImageModule = await import('@teachablemachine/image');
-		tmImage = tmImageModule.default ?? tmImageModule;
-	}
+    // Check if the library is loaded as soon as the page mounts
+    onMount(() => {
+        const checkLib = setInterval(() => {
+            if (window.speechCommands) {
+                libReady = true;
+                clearInterval(checkLib);
+                console.log("✅ Speech Commands library is now ready.");
+            }
+        }, 500);
 
-	async function init() {
-		if (isStarting || isRunning) return;
+        return () => clearInterval(checkLib);
+    });
 
-		isStarting = true;
-		try {
-			await ensureLibrariesLoaded();
-			const modelURL = `${MODEL_URL}model.json`;
-			const metadataURL = `${MODEL_URL}metadata.json`;
+    async function init() {
+        if (!browser || isStarting || isRunning || !libReady) return;
+        isStarting = true;
+        errorMessage = "";
 
-			model = await tmImage.load(modelURL, metadataURL);
-			maxPredictions = model.getTotalClasses();
-			predictions = Array.from({ length: maxPredictions }, () => ({ className: '', probability: 0 }));
+        try {
+            const host = window.location.origin;
+            const checkpointURL = host + MODEL_PATH + 'model.json';
+            const metadataURL = host + MODEL_PATH + 'metadata.json';
 
-			const flip = true;
-			webcam = new tmImage.Webcam(200, 200, flip);
-			await webcam.setup();
-			await webcam.play();
+            // Double check
+            if (!window.speechCommands) {
+                throw new Error("Library disappeared! Please refresh.");
+            }
 
-			if (webcamContainer) {
-				webcamContainer.innerHTML = '';
-				webcamContainer.appendChild(webcam.canvas);
-			}
+            recognizer = window.speechCommands.create("BROWSER_FFT", undefined, checkpointURL, metadataURL);
+            await recognizer.ensureModelLoaded();
 
-			isRunning = true;
-			loop();
-		} catch (error) {
-			console.error(error);
-		} finally {
-			isStarting = false;
-		}
-	}
+            const labels = recognizer.wordLabels();
+            predictions = labels.map(label => ({ className: label, probability: 0 }));
 
-	async function predict() {
-		if (!model || !webcam) return;
+            await recognizer.listen(result => {
+                predictions = labels.map((label, i) => ({
+                    className: label,
+                    probability: result.scores[i]
+                }));
+                
+                // Trigger scare if any non-background sound is > 80%
+                for (const p of predictions) {
+                    if (p.className !== "Background Noise" && p.probability > 0.80) {
+                        triggerScare();
+                        break; 
+                    }
+                }
+            }, {
+                probabilityThreshold: 0.70,
+                overlapFactor: 0.5
+            });
 
-		const result = await model.predict(webcam.canvas);
-		predictions = result.map((item) => ({
-			className: item.className,
-			probability: item.probability
-		}));
-	}
+            isRunning = true;
+        } catch (err) {
+            console.error("Start Error:", err);
+            errorMessage = err.message;
+        } finally {
+            isStarting = false;
+        }
+    }
 
-	async function loop() {
-		if (!isRunning || !webcam) return;
-		webcam.update();
-		await predict();
-		animationFrameId = window.requestAnimationFrame(loop);
-	}
+    function triggerScare() {
+        if (isScared) return;
+        animalMood = "🐇";
+        isScared = true;
+        setTimeout(() => {
+            animalMood = "🐰";
+            isScared = false;
+        }, 1500);
+    }
 
-	function stop() {
-		isRunning = false;
-		if (animationFrameId) {
-			window.cancelAnimationFrame(animationFrameId);
-			animationFrameId = undefined;
-		}
-		if (webcam) {
-			webcam.stop();
-		}
-	}
+    function stop() {
+        if (recognizer) recognizer.stopListening();
+        isRunning = false;
+    }
 
-	onDestroy(() => {
-		stop();
-	});
+    onDestroy(stop);
 </script>
 
-<div>Teachable Machine Image Model</div>
-<button type="button" onclick={init} disabled={isStarting || isRunning}>
-	{#if isStarting}
-		Starting...
-	{:else if isRunning}
-		Running
-	{:else}
-		Start
-	{/if}
-</button>
+<style>
+    .shake { display: inline-block; animation: shake 0.2s infinite; }
+    @keyframes shake {
+        0% { transform: translate(1px, 1px); }
+        50% { transform: translate(-2px, -1px); }
+        100% { transform: translate(1px, 1px); }
+    }
+    button:disabled { cursor: not-allowed; opacity: 0.6; }
+</style>
 
-<div bind:this={webcamContainer}></div>
+<main style="text-align: center; padding: 20px;">
+    <div style="font-size: 80px;" class={isScared ? 'shake' : ''}>
+        {animalMood}
+    </div>
 
-<div>
-	{#each predictions as prediction}
-		<div>{prediction.className}: {prediction.probability.toFixed(2)}</div>
-	{/each}
-</div>
+    {#if !libReady}
+        <p style="color: orange;">⏳ Downloading AI libraries... please wait.</p>
+    {/if}
+
+    {#if errorMessage}
+        <p style="color: red;">❌ {errorMessage}</p>
+    {/if}
+
+    <button on:click={init} disabled={!libReady || isStarting || isRunning}>
+        {!libReady ? 'Waiting for Library...' : isStarting ? 'Starting...' : isRunning ? 'Listening' : 'Start Microphone'}
+    </button>
+    
+    <button on:click={stop} disabled={!isRunning}>Stop</button>
+
+    <div style="margin-top: 20px; text-align: left; max-width: 250px; margin-inline: auto;">
+        {#each predictions as p}
+            <div style="margin-bottom: 8px;">
+                <small style="display:block">{p.className}: {(p.probability * 100).toFixed(0)}%</small>
+                <div style="background: #eee; height: 6px; border-radius: 3px; width: 100%;">
+                    <div style="background: {p.probability > 0.8 ? '#ff4d4d' : '#4caf50'}; 
+                                height: 100%; width: {p.probability * 100}%; transition: width 0.1s;"></div>
+                </div>
+            </div>
+        {/each}
+    </div>
+</main>
